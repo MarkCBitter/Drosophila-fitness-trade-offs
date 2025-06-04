@@ -14,6 +14,7 @@ The notebook in IndoorCage_Fst_MDS.html contains R code for all Fst-based analys
 The notebook FullExpansion_Truncation1_SiteComparison.html contains R code for assessing the dynamics of expansion-favored alleles throughout truncation.
 The notebook IndoorCage_InversionAnalysis.html contains R code that visualizes the frequency of inversions throughout expansion and truncation.
 The notebook IndoorCage_SeasonalEnrichment_orch2021Data.html contains R code that analyzes the paired indoor-outdoor mesocosm experiment conducted in 2021.
+The directory SLiM_simulations contains the config files for the SLiM simulations run for the revised manuscript
 
 
 ###Data availability
