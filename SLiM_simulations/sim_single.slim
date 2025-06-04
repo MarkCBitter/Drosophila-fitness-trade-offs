@@ -1,0 +1,46 @@
+initialize() {
+  initializeMutationRate(0.0);
+
+  // focal mutation A
+  initializeMutationType("m1", h, "f", selExpA);
+
+  initializeGenomicElementType("g1", c(m1), c(1.0));
+  initializeGenomicElement(g1, 0, chrom);
+  initializeRecombinationRate(rbp);
+
+  // to let us track mutations throughout, we need to do this:
+  m1.convertToSubstitution = T;
+  m1.mutationStackPolicy = "f";
+
+}
+
+1 early() {
+  sim.addSubpop("p1", asInteger(nSeed));
+
+  log = community.createLogFile(outfile, logInterval=1, flushInterval=101);
+  log.addCycle();
+  log.addPopulationSize();
+  log.addCustomColumn('m_a', 'sum(p1.genomes.countOfMutationsOfType(m1));');
+}
+
+// introduce the focal mutation
+1 late() {
+  // sample a fraction of p0 genomes
+  sampled = sample(p1.genomes, asInteger(nA));
+  // add focal mutation at 2Mb
+  sampled.addNewDrawnMutation(m1, mutPosA);
+}
+
+2 early() {
+  p1.setSubpopulationSize(N);
+}
+
+// expansion is over, now "truncation"
+10 late() {
+  sim.chromosome.setRecombinationRate(0.0);
+  p1.genomes.mutationsOfType(m1).setSelectionCoeff(asFloat(selTruncA));
+}
+
+14 late() {
+  sim.simulationFinished();
+}

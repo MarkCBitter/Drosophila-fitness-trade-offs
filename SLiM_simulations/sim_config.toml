@@ -1,0 +1,48 @@
+[settings]
+# global random seed
+seed = 231
+# number of replicates per parameter set
+replicates = 1000
+# slim script to run
+script = "sim.slim"
+# output directory
+output_dir = "output/sim"
+# number of threads to use
+cores = 8
+# interval to write output to disk in parameter sets
+write_every = 50000
+# annotate the output log files with parameter values
+annotate = true
+# only run first `limit' simulations (for debugging purposes)
+# limit = 100
+custom_script = "sim_custom.scm"
+
+[grid]
+# population size during burn-in
+N = 1000
+# number of haplotypes seeding the experiment
+nSeed = 1000
+# chromosome size 
+chrom = 24000000
+# mutation position
+mutPosA = 2000000
+mutPosB = [2500000, 3000000, 4000000, 6000000, 22000000]
+# starting frequency bounds for both A and B
+# values are to be chosen randomly in a custom script
+f0min = 0.34
+f0max = 0.66
+# initial r-squared phrase: no linkage (0), high attraction (1), or repulsion (-1)
+# no linkage: r^2 < 0.01
+# high attraction: r^2 > 0.05, r > 0
+# high repulsion: r^2 > 0.05, r < 0
+rsqCategory = [0.0, -1.0, 1.0]
+# selection during expansion
+selExpA = { from = 0.00, to = 0.2, num = 5 }
+selExpB = 0.0
+# selection during truncation
+selTruncA = 0.0
+selTruncB = { from = 0.00, to = 0.2, num = 5 }
+# dominance coefficient
+h = 0.5
+# recombination rate
+rbp = 0.0000000239

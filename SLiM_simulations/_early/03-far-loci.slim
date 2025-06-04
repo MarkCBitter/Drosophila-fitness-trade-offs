@@ -1,0 +1,91 @@
+
+initialize() {
+  pAB = f0*f0 + sqrt(rsq)*f0*(1-f0);
+  pA = f0 - pAB;
+  pB = f0 - pAB;
+  nAB = asInteger(floor(2*nSeed*pAB));
+  nA = asInteger(ceil(2*nSeed*pA));
+  nB = asInteger(ceil(2*nSeed*pB));
+
+  if (nAB == 0) {
+      if (nA == 0) {
+          // no mutations shouldn't be possible, so add just one
+          defineConstant("rangeA", 0);
+          defineConstant("rangeB", 1);
+      } else {
+          defineConstant("rangeA", 0:(nA-1));
+          defineConstant("rangeB", nA:(nA+nB-1));
+      }
+  } else {
+      if (nA == 0) {
+          defineConstant("rangeA", 0:(nAB-1));
+          defineConstant("rangeB", 0:(nAB-1));
+      } else {
+          defineConstant("rangeA", c(0:(nAB-1), nAB:(nAB+nA-1)));
+          defineConstant("rangeB", c(0:(nAB-1), (nAB+nA):(nAB+nB+nA-1)));
+      }
+  }
+
+  initializeMutationRate(mu);
+
+  // background mutations
+  initializeMutationType("m1", 0.5, "f", 0.0);
+  // focal mutation A
+  initializeMutationType("m2", h, "f", selExpA);
+  // focal mutation B
+  initializeMutationType("m3", h, "f", selExpB);
+
+
+  initializeGenomicElementType("g1", c(m1,m2,m3), c(1.0,0.0,0.0));
+  initializeGenomicElement(g1, 0, chrom);
+  initializeRecombinationRate(rbp);
+
+  // to let us track m2, we need to do this:
+  m2.convertToSubstitution = T;
+  m2.mutationStackPolicy = "f";
+
+  m3.convertToSubstitution = T;
+  m3.mutationStackPolicy = "f";
+
+}
+
+99 early() {
+  sim.addSubpop("p1", asInteger(N));
+}
+
+// end of burn-in, make a bottleneck 
+100 early() {
+  p1.setSubpopulationSize(nSeed);
+
+  log = community.createLogFile(outfile, logInterval=1, flushInterval=101);
+  log.addCycle();
+  log.addPopulationSize();
+  log.addCustomColumn('m_a', 'sum(p1.genomes.countOfMutationsOfType(m2));');
+  log.addCustomColumn('m_b', 'sum(p1.genomes.countOfMutationsOfType(m3));');
+  log.addCustomColumn('m_ab', 'sum((p1.genomes.countOfMutationsOfType(m2) == 1) & (p1.genomes.countOfMutationsOfType(m3) == 1));');
+}
+
+// introduce the focal mutation
+100 late() {
+  p1.genomes[rangeA].addNewDrawnMutation(m2, mutPosA);
+  p1.genomes[rangeB].addNewDrawnMutation(m3, mutPosB);
+}
+
+// now run 9 generations of "expansion"
+101 early() {
+  p1.setSubpopulationSize(N);
+}
+
+// expansion is over, now "truncation"
+109 late() {
+  sim.chromosome.setRecombinationRate(0.0);
+}
+
+110 early() {
+  p1.genomes.mutationsOfType(m2).setSelectionCoeff(asFloat(selTruncA));
+  p1.genomes.mutationsOfType(m3).setSelectionCoeff(selTruncB);
+}
+
+113 late() {
+  sim.simulationFinished();
+}

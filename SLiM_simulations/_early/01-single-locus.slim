@@ -1,0 +1,59 @@
+
+initialize() {
+  initializeMutationRate(mu);
+
+  // background mutations
+  initializeMutationType("m1", 0.5, "f", 0.0);
+  // focal mutation
+  initializeMutationType("m2", h, "f", selExp);
+
+  initializeGenomicElementType("g1", c(m1,m2), c(1.0,0.0));
+  initializeGenomicElement(g1, 0, chrom);
+  initializeRecombinationRate(rbp);
+
+  // to let us track m2, we need to do this:
+  m2.convertToSubstitution = T;
+  m2.mutationStackPolicy = "f";
+
+}
+
+1 early() {
+  sim.addSubpop("p1", asInteger(N));
+}
+
+// end of burn-in, make a bottleneck 
+100 early() {
+    p1.setSubpopulationSize(nSeed);
+
+}
+
+// introduce the focal mutation
+100 late() {
+    // sample a fraction of p0 genomes
+    sampled = sample(p1.genomes, asInteger(round(f0*(2*nSeed))));
+    // add focal mutation at 2Mb
+    sampled.addNewDrawnMutation(m2, mutPos);
+}
+
+// now run 9 generations of "expansion"
+101 early() {
+    p1.setSubpopulationSize(N);
+
+    log = community.createLogFile(outfile, logInterval=1, flushInterval=101);
+    log.addCycle();
+    log.addPopulationSize();
+    log.addCustomColumn('m_a', 'sum(p1.genomes.countOfMutationsOfType(m2));');
+}
+
+// expansion is over, now "truncation"
+109 late() {
+    sim.chromosome.setRecombinationRate(0.0);
+}
+
+110 early() {
+    p1.genomes.mutationsOfType(m2).setSelectionCoeff(selTrunc);
+}
+
+113 late() {
+  sim.simulationFinished();
+}

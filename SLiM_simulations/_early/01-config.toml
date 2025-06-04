@@ -1,0 +1,43 @@
+[settings]
+# global random seed
+seed = 231
+# number of replicates per parameter set
+replicates = 256
+# slim script to run
+script = "01-single-locus.slim"
+# output directory
+output_dir = "output/01-single-locus"
+# number of threads to use
+cores = 8
+# interval to write output to disk in parameter sets
+write_every = 15000
+# annotate the output log files with parameter values
+annotate = true
+# only run first `limit' simulations (for debugging purposes)
+# limit = 100
+# custom slim executable path (also can be set with $SLIM_EXE environment variable)
+# slim_executable = "/usr/locl/bin/slim"
+
+[grid]
+# population size during burn-in
+N = 1000
+# number of haplotypes seeding the experiment
+nSeed = 255
+# chromosome size (25Mb)
+chrom = 25000000
+# mutation position
+mutPos = 2000000
+# selected locus starting frequency
+f0 = { from = 0.02, to = 0.1, num = 11 }
+# selection during expansion
+selExp = { from = 0.02, to = 0.2, num = 5 }
+# selection during truncation 
+selTrunc = { from = -0.2, to = -0.01, num = 5 }
+# dominance coefficient
+h = 0.5
+# mutation rate
+mu = 1.67e-9
+# recombination rate
+rbp = 0.0000000239
+# experiment tag
+tag = "single-locus"
