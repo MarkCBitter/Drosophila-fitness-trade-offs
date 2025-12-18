@@ -8,14 +8,22 @@ The study consisted of two experiments:
 
 ###Repository description
 This repository contains code for the analysis of allele frequency data from each of the two experiments described above.
+
 The R scripts glm.FullExpansion.x2.R and glm.Truncation1.x2.R run a generlized linear model on allele frequency data from the expansion and truncation samples, respectively.
+
 The notebook in IndoorCage_ExpansionGLM_Manhattans.html contains R code that takes the output of glm.FullExpansion.x2.R , identifies significant sites, and generates a manhattan plot from the output regression data.
+
 The notebook in IndoorCage_Fst_MDS.html contains R code for all Fst-based analysis (e.g., trends of Fst throughout the experiment and Fst-MDS analysis)
+
 The notebook FullExpansion_Truncation1_SiteComparison.html contains R code for assessing the dynamics of expansion-favored alleles throughout truncation.
+
 The notebook IndoorCage_InversionAnalysis.html contains R code that visualizes the frequency of inversions throughout expansion and truncation.
-The notebook IndoorCage_SeasonalEnrichment_orch2021Data.html contains R code that analyzes the paired indoor-outdoor mesocosm experiment conducted in 2021.
+
+The notebook Indoor_Outdoor_Mesocosm2021_Analysis.html contains R code that analyzes the paired indoor-outdoor mesocosm experiment conducted in 2021.
+
 The directory SLiM_simulations contains the config files for the SLiM simulations run for the revised manuscript
 
 
 ###Data availability
-Sequencing data from the DGRP lines used in the population expansion/truncation experiment are publicly available at http://dgrp2.gnets.ncsu.edu/data.html.  Haplotype-informed allele frequency estimates from evolved, outbred samples and used in statistical analysis will be available at upon article publication. Founder line sequences for the paired indoor/outdoor mesocosm study are available at NCBI Accession PRJNA722305. Outdoor mesocosm sequences generated via pooled sequencing for this experiment are available at NCBI accession PRJNA1031645 and alle frequency data is available at the following Dryad repository: https://doi.org/10.5061/dryad.xd2547dpv. Indoor sequences and allele frequency data will be available upon article publication.
+Sequencing data from the DGRP lines used in the population expansion/truncation experiment (Experiment 1) are publicly available at http://dgrp2.gnets.ncsu.edu/data.html.  Founder line sequences for the paired indoor/outdoor mesocosm study (Experiment 2) are available at NCBI Accession PRJNA722305. Raw sequencing reads from pooled samples collected during Experiments 1 and 2 are available at NCBI Accessions PRJNA1390176 and PRJNA1031645 , respectively¬. All raw allele frequency data necessary to replicate the results presented here are publicly available on Dryad: https://doi.org/10.5061/dryad.hx3ffbgt1.<img width="468" height="85" alt="image" src="https://github.com/user-attachments/assets/c706599e-8d2e-42f6-b996-c43caae4523e" />
+
