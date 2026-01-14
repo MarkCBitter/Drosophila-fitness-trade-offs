@@ -1,6 +1,10 @@
 #Drosophila fitness trade-offs
 Repository of code for experiments assessing presence of fitness trade-offs using large, experimental populations of Drosophila melanogaster.
 
+##NOTE ON DATA AVAILABILITY AND COMPUTATIONAL RESOURCES:
+The data files necesssary to reproduce the provided code is available on Dryad (https://doi.org/10.5061/dryad.hx3ffbgt1). Users will need to download the data files from that directory, as well as the code provided here to reproduce these analyses. 
+All analyses were run using a high-performance computing cluster. Unless otherwise noted in the provided notebook, the specific configuration used for analyses were 5CPU's and 300Gb of memory (run on Stanford University's High Performance Computing Cluster). 
+
 ###Study Overview
 The study consisted of two experiments:
 1) An indoor experimental evolution study using four outbred, replicate popultions of the DGRP (http://dgrp2.gnets.ncsu.edu/data.html) whereby replicate popultions underwent sustained repredocution selection for nine, non-overlapping generations and a single bout of stress-tolerance, truncations selection. 
