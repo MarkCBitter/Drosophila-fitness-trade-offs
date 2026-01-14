@@ -1,0 +1,812 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.2'
+      jupytext_version: 1.17.1
+  kernelspec:
+    display_name: R
+    language: R
+    name: ir
+---
+
+```{r}
+#This notebook contains code for the following:
+    #1) identifying sites with evidence of (linked) selection during population expansion
+    #2) quantifying their dynamics throughout truncation
+
+##MAIN TEXT FIGURES PRODUCED: 2E; 2F; 3C; 3D; 3E 
+```
+
+```{r}
+##Note on computational resources:
+    ##All code was run on a high-performance computing cluster using 5 cores and 300 Gb of memory 
+    ##Code blocks needing addtional resources are denoted
+```
+
+```{r}
+##All data are located in the corresponding dryad repository for this manuscript: 
+###https://doi.org/10.5061/dryad.hx3ffbgt1
+##The key data file to download for this set of analyses is: Experiment1_PopulationExpansionTruncation.RData 
+ 
+```
+
+```{r}
+##Packages to load 
+library(data.table)
+library(tidyverse)
+library(doMC)
+library(zoo)
+
+
+
+```
+
+```{r}
+#Sourcing pre-written functions that are called upon in the code chunks, below
+source('./general_cage_functions.R')
+source("./indoor.cage.functions.R")
+
+```
+
+# 1.  Identification and analysis of expansion-favored alleles
+
+```{r}
+#1a) Generalized linear regression (GLM) of allele frequency across population expansion:
+###NOTE: this code was run using increased computational resources: 8 cpu's and 400Gb memory (ran for ~4 hours)
+
+vec = c(0:9)
+
+load('./Experiment1_PopulationExpansionTruncation.RData')
+
+##This code is commented out because it is only for use when testing the code on a subset of the data (n = 100 sites)
+#afmat = afmat[1:100, ]
+#sites = sites[1:100,]
+#eec = eec[1:100, ]
+
+
+#generate a dataframe with the chromosome and position information for each site in the GLM
+#the GLM results will be appended to this dataframe
+df.glm = sites
+
+#encode time point as a numeric variable
+samps = samps %>% mutate(tpt = as.numeric(as.character(tpt)))
+
+#isolate only early (exp1) and late expansion (exp2) samples from allele frequency (afmat) and coverage (eec) data frames
+afmat = cbind(samps, t(afmat))
+eec = cbind(samps, t(eec))
+afmat = as.data.frame(afmat %>%
+    filter(phase %in% c('exp1', 'exp2')))
+eec = as.data.frame(eec %>%
+filter(phase %in% c('exp1', 'exp2')))
+samps = afmat[,1:ncol(samps)]
+afmat = afmat[,-c(1:ncol(samps))]
+afmat = as.data.frame(t(afmat))
+eec = eec[,-c(1:ncol(samps))]
+eec = as.data.frame(t(eec))
+
+save(samps, sites, afmat, eec, file = './indoor_cages_filteredx2.FullExpansion.RData')
+
+
+#Run the GLM across all sites using the fit_GLM_ContinuousTime function that was sourced, above
+res = as.data.frame(fit_GLM_ContinuousTime(afMatrix = afmat ,rdMatrix = eec, vec = vec,
+                                               sampleData = samps, model.vars = 'tpt', poolCt=100, ncores = 16))
+df.glm = as.data.frame(cbind(df.glm, res))
+
+
+save(df.glm, file = 'glm.FullExpansionx2.RData')
+
+
+```
+
+```{r}
+#1b) identify GLM-significant sites using BH-correction (FDR) and effect size thresholds
+df.Exp = get.sig.sites(glm.file = './glm.FullExpansionx2.RData', rdata = './indoor_cages_filteredx2.FullExpansion.RData',
+                       comps = c('0_9'), fdrThreshs= c(0.01, 0.01, 0.005), esThreshs= c(0.02, 0.03, 0.05))
+write.csv(df.Exp, './df.sig.FullExpansion.x2.csv', row.names = FALSE)
+sites.exp = df.Exp %>% dplyr::select(chrom, pos, FDR, afShift) %>% rename(FDR.exp = FDR) %>%
+    mutate(snp = paste0(chrom, pos)) %>% rename(shift.exp = afShift) %>%
+    dplyr::select(chrom, pos, snp, FDR.exp, shift.exp)
+
+
+```
+
+```{r}
+#1c) get a separate dataframe with average (across cages) allele frequency shifts across expansion
+load('./indoor_cages_filteredx2.FullExpansion.RData')
+exp.shifts = get_af_shifts(afmat = afmat, samps = samps, cage_set = NULL, c('0_9'))
+exp.shifts = cbind(sites, exp.shifts)
+write.csv(exp.shifts, './shifts.FullExpansion.x2.csv', row.names = FALSE)
+```
+
+```{r}
+#1d) plot significant sites as a 'manhattan' plot
+df.sig = read.csv('./df.sig.FullExpansion.x2.csv')
+df.sig <- df.sig %>% mutate(sigLabel=as.factor(sigLevel),compLabel = as.factor(comparison))
+##only retain v. significant sites for plotting purposes:
+df.sig = df.sig %>% filter(-log10(FDR) > 3)
+
+##for this plot, load in inversion breakpoints to visualize alongside significant sites:
+inv.coordinates = fread('./sixMajorInversions_rel5Coords.txt')
+inv.coordinates
+```
+
+```{r}
+#wrangle inversion breakpoints dataframe
+inv.coordinates = inv.coordinates %>% mutate(start = BK1, end = BK2, chrom = CHROM, inversion = NAME)
+inversion_annotations <- inv.coordinates %>%
+  mutate(start = start / 1000000, end = end / 1000000)
+inversion_annotations = inversion_annotations %>% filter(ID != 'FBab0005253')
+inversion_annotations <- inversion_annotations %>%
+  mutate(color = c('red', 'yellow4', 'green3', 'dodgerblue', 'magenta'))
+
+
+#same as above with shifted text position
+inversion_annotations <- inversion_annotations %>%
+  mutate(text_x = c(7.689962, 13.721249, 21, 10, 15 ),
+         stagger_y = c(1.3, 1.3, 0.5, 1.3, 0.9)) 
+```
+
+# Figure 2F: Manhattan plot of expansion sample allele frequency data
+
+```{r}
+
+p = df.sig  %>%
+  ggplot(aes(x = pos / 1000000)) +
+  theme_minimal() +
+  facet_grid(~ chrom, scales = "free_x") +
+  theme(
+    legend.position = 'none',
+    strip.text = element_text(size = 35),
+    strip.text.y = element_text(size = 30),
+    axis.text.y = element_text(size = 30),
+    axis.text.x = element_text(size = 30),
+    axis.title = element_text(size = 30)
+  ) +
+  labs(x = "Position (Mb)", y = "-log10(FDR-corrected p-value)") +
+  geom_point(aes(y = -log10(FDR), color = 'dark grey'), alpha = .2, size = 1) +
+  scale_colour_manual(values = c('dark grey')) +
+  geom_segment(
+    data = inversion_annotations,
+    aes(
+      x = start,
+      xend = end,
+      y = c(1.5, 1.5,  0.7, 1.5, 1.1),  # Position below x-axis, adjust as necessary
+      yend = c(1.5, 1.5,  0.7, 1.5, 1.1),
+      color = color  # Map color to the 'color' column
+    ),
+    size = 1.5,  # Increase the line size for better visibility
+    alpha = 0.6  # Set alpha for transparency
+  ) +
+  geom_text(
+    data = inversion_annotations,
+    aes(
+      x = text_x,  # Use the shifted x-position for the text
+      y = stagger_y,  # Position below the segment line, adjust as necessary
+      label = inversion,
+      color = color  # Map color to the 'color' column
+    ),
+    size = 8,
+    angle = 0,
+    vjust = 0.5
+  ) + 
+  scale_color_identity()  # Use the colors directly from the 'color' column 
+p 
+ggsave('./manhattan.ExpansionSites.pdf',p, height = 17, width = 20)
+```
+
+```{r}
+#1e) identifgy matched control sites for those SNPs with evidence of (linked) selection during expansion  
+##this takes increased computational resources: run with 6 cpu's and 400Gb memory (ran for ~24 hours)
+
+#For this, load allele frequency data of 'baseline' - 
+        ##this is simply the average frequency across replicates at the first expansion time point  
+base.data = read.csv('../indoor.base.Mean.csv')
+df = read.csv('../GLM/df.sig.FullExpansion.x2.csv')
+
+base.data = base.data %>% mutate(snp = paste0(chrom, pos))
+df = df %>% mutate(snp = paste0(chrom, pos))
+df = left_join(df, base.data, by = 'snp') %>% dplyr::select(-chrom.y, -pos.y) %>% rename(chrom = chrom.x, pos = pos.x)
+snps.c = as.character(df$snp)
+
+
+mc.cores <- 12  # Set the number of cores you want to use here
+result_list <- mclapply(1:nrow(df), function(i) get.matchedSNP(df[i, ], snps.c, base.data), mc.cores = mc.cores)
+result_df <- do.call(rbind, result_list)
+write.csv(result_df,paste0('df.sig.Matched.FullExpansion.x2.csv') , row.names = FALSE)
+
+```
+
+```{r}
+#1f) Generating trajectories of expansion-favored SNPs
+
+#load in average (across replicate) gen0->9 frequency shifts, generated above
+exp.shifts = read.csv('./shifts.FullExpansion.x2.csv')
+#isolate allele frequency shifts for the GLM expansion-identified SNPs
+sites.exp = read.csv('./df.sig.Matched.FullExpansion.x2.csv') %>% dplyr::select(chrom, pos, FDR, afShift) %>% rename(FDR.exp = FDR) %>%
+    mutate(snp = paste0(chrom, pos)) %>% rename(shift.exp = afShift) %>%
+    dplyr::select(chrom, pos, snp, FDR.exp, shift.exp)
+
+
+shifts.target = sites.exp %>% dplyr::select(chrom, pos) %>% mutate(chrom = as.character(chrom))
+shifts.target.exp = left_join(shifts.target, exp.shifts)
+names(shifts.target.exp) = c('chrom', 'pos', 'dAF.Expansion')
+#get the direction of change of each SNP to identify 'rising' allele
+shifts.target.exp = shifts.target.exp %>% mutate(sign.shift = sign(dAF.Expansion))
+
+#re-load in allele frequency data to get shifts between consecutive timepoints and, therefore, the full expansion trajectory
+load('./indoor_cages_filteredx2.FullExpansion.RData')
+
+#source new set of functions that includes the get_af_shifts function
+source('./general_cage_functions.R')
+
+traj.top = cbind(sites, afmat)
+traj.top = left_join((sites.exp %>% dplyr::select(chrom, pos)), traj.top)
+traj.top = traj.top %>% dplyr::select(-chrom, -pos)
+traj.fullexp = get_af_shifts(as.matrix(traj.top), samps,cage_set = NULL, comparisons = c('0_1', '1_2', '2_3','3_4',
+                                                                               '4_6', '6_8', '8_9'))
+
+##Phase such that we compute the trajectory of the rising allele during expansion:
+##Full expansion
+#Phase:
+traj.fullexp.phased = matrix(nrow = nrow(traj.fullexp))
+for (i in 1:ncol(traj.fullexp)){
+    col.new = as.data.frame(traj.fullexp[,i] * shifts.target.exp$sign.shift)
+    traj.fullexp.phased = cbind(traj.fullexp.phased, col.new)
+}
+traj.fullexp.phased = traj.fullexp.phased[,-1]
+names(traj.fullexp.phased) = names(traj.fullexp)
+traj.fullexp = traj.fullexp.phased
+
+
+
+#Generate trajectories:
+shifts.fullexp = matrix(nrow = nrow(sites.exp), ncol = 8)
+for (row in 1:nrow(traj.fullexp)){
+    shifts = as.vector(as.numeric(traj.fullexp[row, ]))
+    shifts = cumsum(shifts)
+    shifts = c(0, shifts)
+    shifts.fullexp = rbind(shifts.fullexp, shifts)
+    
+}
+shifts.fullexp = as.data.frame(na.omit(shifts.fullexp))
+names(shifts.fullexp) = c('E.1', 'E.2', 'E.3','E.4','E.5','E.6','E.7','E.8')
+
+shifts.fullexp = cbind((sites.exp %>% dplyr::select(chrom, pos)), shifts.fullexp)
+
+
+
+#shifts.trunc1 = cbind((sites.exp %>% dplyr::select(chrom, pos)), shifts.trunc1)
+
+write.csv(shifts.fullexp, './shifts.FullExpSites.FullExp.csv', row.names = FALSE)
+```
+
+# Figure 2F: expansion-favored allele trajectories throughout expansion
+
+```{r}
+shifts.exp.t = read.csv('./shifts.FullExpSites.FullExp.csv')
+
+shifts.exp.t = shifts.exp.t %>% gather(3:10, key = tpt, value = frequency)
+shifts.exp.t = shifts.exp.t %>% mutate(snp = paste0(chrom, pos))
+
+shifts.exp.t = shifts.exp.t %>% mutate(tpt = case_when(
+    tpt == 'E.1' ~ '0',
+    tpt == 'E.2' ~  '1',
+    tpt == 'E.3' ~  '2',
+    tpt == 'E.4' ~  '3',
+    tpt == 'E.5' ~  '4',
+    tpt == 'E.6' ~  '6',
+    tpt == 'E.7' ~ '8',
+    tpt == 'E.8' ~ '9'))
+
+
+shifts.exp.t = shifts.exp.t %>% mutate(tpt = factor(as.character(tpt), levels = c('0', '1', '2','3',
+                                                                              '4','6','8', '9')))
+
+#randomly sample representative number to make plotting reasible
+snps.sub = sample(unique(shifts.exp.t$snp), 3500) 
+d = (shifts.exp.t) %>% filter(snp %in% snps.sub)
+p  = ggplot(d, aes(x = tpt, y = frequency, group = snp)) +
+        geom_line(size = 0.3, alpha = 0.2) +
+        theme_bw(base_size = 35) +
+        scale_colour_manual(values = c('black')) +
+        theme(legend.position = 'none') +
+        xlab('Expansion Generation') +
+        ylab('Allele Frequency') 
+p
+ggsave('./ExpansionSNPs.Target.ExpansionTrajectories.pdf', height = 12, width = 14)
+
+```
+
+# 2. Analysis of expansion-favored alleles during truncation
+
+```{r}
+source("./indoor.cage.functions.R")
+
+```
+
+```{r}
+#now get truncation trajectories for expansion-identified snps
+
+#first, need to get allele frequency data for just truncation samples:
+load(paste0('./Experiment1_PopulationExpansionTruncation.RData'))
+samps = samps %>% mutate(tpt = as.numeric(as.character(tpt)))
+afmat = cbind(samps, t(afmat))
+eec = cbind(samps, t(eec))
+
+##note, excluding time point/hour 23 b/c there were too few flies for accurate allele frequency estimates
+afmat = as.data.frame(afmat %>%
+    filter(phase %in% c('trunc1') & tpt != '23'))
+eec = as.data.frame(eec %>%
+    filter(phase %in% c('trunc1') & tpt != '23'))
+samps = afmat[,1:ncol(samps)]
+afmat = afmat[,-c(1:ncol(samps))]
+afmat = as.data.frame(t(afmat))
+eec = eec[,-c(1:ncol(samps))]
+eec = as.data.frame(t(eec))
+save(sites, samps, afmat, file = './indoor_cages_filteredx2.Truncation1.RData')
+
+#now, get the expansion-identified sites and the shifts at the rising allele, as above
+#load in average (across replicate) gen0->9 frequency shifts, generated above
+exp.shifts = read.csv('./shifts.FullExpansion.x2.csv')
+#isolate allele frequency shifts for the GLM expansion-identified SNPs
+sites.exp = read.csv('./df.sig.Matched.FullExpansion.x2.csv') %>% dplyr::select(chrom, pos, FDR, afShift) %>% rename(FDR.exp = FDR) %>%
+    mutate(snp = paste0(chrom, pos)) %>% rename(shift.exp = afShift) %>%
+    dplyr::select(chrom, pos, snp, FDR.exp, shift.exp)
+
+
+shifts.target = sites.exp %>% dplyr::select(chrom, pos) %>% mutate(chrom = as.character(chrom))
+shifts.target.exp = left_join(shifts.target, exp.shifts)
+names(shifts.target.exp) = c('chrom', 'pos', 'dAF.Expansion')
+#get the direction of change of each SNP to identify 'rising' allele
+shifts.target.exp = shifts.target.exp %>% mutate(sign.shift = sign(dAF.Expansion))
+
+#now, compute the trajectories of the expansion-favored allele during truncation
+source('./indoor.cage.functions.R')
+load('./indoor_cages_filteredx2.Truncation1.RData')
+traj.top = cbind(sites, afmat)
+traj.top = left_join((sites.exp %>% dplyr::select(chrom, pos)), traj.top)
+traj.top = traj.top %>% dplyr::select(-chrom, -pos)
+
+traj.trunc1 = get_af_shifts(as.matrix(traj.top), samps,cage_set = NULL, comparisons = c('0_6', '6_9','9_12', '12_15','15_19',
+                                                                               '19_21'))
+
+##Truncation1
+#Phase:
+traj.trunc1.phased = matrix(nrow = nrow(traj.trunc1))
+for (i in 1:ncol(traj.trunc1)){
+    col.new = as.data.frame(traj.trunc1[,i] * shifts.target.exp$sign.shift)
+    traj.trunc1.phased = cbind(traj.trunc1.phased, col.new)
+}
+traj.trunc1.phased = traj.trunc1.phased[,-1]
+names(traj.trunc1.phased) = names(traj.trunc1)
+traj.trunc1 = traj.trunc1.phased
+
+shifts.trunc1 = matrix(nrow = nrow(sites.exp), ncol = 7)
+for (row in 1:nrow(traj.trunc1)){
+    shifts = as.vector(as.numeric(traj.trunc1[row, ]))
+    shifts = cumsum(shifts)
+    shifts = c(0, shifts)
+    shifts.trunc1 = rbind(shifts.trunc1, shifts)
+    
+}
+shifts.trunc1 = as.data.frame(na.omit(shifts.trunc1))
+names(shifts.trunc1) = c('T.1', 'T.2', 'T.3','T.4','T.5','T.6','T.7')
+
+write.csv(shifts.trunc1, './shifts.FullExpSites.Trunc1.csv', row.names = FALSE)
+```
+
+```{r}
+##plot trajectories of expansion-favored alleles during truncation
+##for this, I want to 
+##want to color by whether the expansion-identified allele also exhibits evidence of linked seleciton during truncaiton
+##so, need to run glm on all sites across expansion and then identify significant sites
+#GLM on all cages throughout truncation
+##as above, this code was run using increased computational resources: 8 cpu's and 400Gb memory (ran for ~4 hours)
+
+vec = c(0:21)
+load(paste0('./Experiment1_PopulationExpansionTruncation.RData'))
+df.glm = sites
+samps = samps %>% mutate(tpt = as.numeric(as.character(tpt)))
+afmat = cbind(samps, t(afmat))
+eec = cbind(samps, t(eec))
+afmat = as.data.frame(afmat %>%
+    filter(phase %in% c('trunc1') & tpt != '23'))
+eec = as.data.frame(eec %>%
+    filter(phase %in% c('trunc1') & tpt != '23'))
+samps = afmat[,1:ncol(samps)]
+afmat = afmat[,-c(1:ncol(samps))]
+afmat = as.data.frame(t(afmat))
+eec = eec[,-c(1:ncol(samps))]
+eec = as.data.frame(t(eec))
+res = as.data.frame(fit_GLM_ContinuousTime(afMatrix = afmat ,rdMatrix = eec, vec = vec,
+                                               sampleData = samps, model.vars = 'tpt', poolCt=100, ncores = 16))
+df.glm = as.data.frame(cbind(df.glm, res))
+save(df.glm, file = paste0('./glm.Truncation1x2.RData'))
+```
+
+```{r}
+#identify significant sites
+##Note: use less stringent FDR threshold than above b/c of depressed signal overall
+#####but also note that this FDR is still relatively stringent
+df.Trunc1 = get.sig.sites(glm.file = './glm.Truncation1x2.RData', rdata = './indoor_cages_filteredx2.Truncation1.RData',
+                       comps = c('0_21'), fdrThreshs= c(0.05, 0.01, 0.005), esThreshs= c(0.01, 0.03, 0.05))
+```
+
+```{r}
+write.csv(df.Trunc1, 'df.sig.Truncation1.csv', row.names = FALSE)
+```
+
+```{r}
+#now get the trajectories of just the expanion-favored alleles and color them if they are significant during truncation
+df.Trunc1 = read.csv('df.sig.Truncation1.csv')
+shifts.trunc1 = read.csv('./shifts.FullExpSites.Trunc1.csv')
+head(shifts.trunc1)
+sites.trunc = df.Trunc1 %>% dplyr::select(chrom, pos) %>% mutate(snp = paste0(chrom, pos))
+
+sites.exp = read.csv('./df.sig.Matched.FullExpansion.x2.csv')
+sites.exp = sites.exp %>% dplyr::select(chrom, pos)
+shifts.trunc1 = read.csv('./shifts.FullExpSites.Trunc1.csv')
+shifts.trunc1 = cbind(sites.exp %>% dplyr::select(chrom, pos), shifts.trunc1)
+
+```
+
+```{r}
+#now get the trajectories of just the expanion-favored alleles and color them if they are significant during truncation
+df.Trunc1 = read.csv('df.sig.Truncation1.csv')
+shifts.trunc1 = read.csv('./shifts.FullExpSites.Trunc1.csv')
+head(shifts.trunc1)
+sites.trunc = df.Trunc1 %>% dplyr::select(chrom, pos) %>% mutate(snp = paste0(chrom, pos))
+
+
+shifts.trunc1 = read.csv('./shifts.FullExpSites.Trunc1.csv')
+shifts.trunc1 = cbind(sites.exp %>% dplyr::select(chrom, pos), shifts.trunc1)
+sites.exp = read.csv('./df.sig.Matched.FullExpansion.x2.csv')
+sites.exp = sites.exp %>% dplyr::select(chrom, pos)
+
+
+sites.trunc$sig.trunc = 'yes'
+shifts.trunc1 = (left_join(shifts.trunc1, sites.trunc))
+dim(shifts.trunc1 %>% filter(sig.trunc == 'yes'))
+
+shifts.trunc1$sig.trunc = na.fill(shifts.trunc1$sig.trunc, fill = "neutral")
+shifts.trunc1 = shifts.trunc1 %>% mutate(dynamic = case_when(
+    sig.trunc == 'neutral' ~ 'neutral',
+    T.7 < 0 & sig.trunc == 'yes' ~ 'fluctuating',
+    T.7 > 0 & sig.trunc == 'yes' ~ 'parallel'))
+
+shifts.trunc1 = shifts.trunc1 %>% gather(3:9, key = tpt, value = frequency)
+shifts.trunc1 = shifts.trunc1 %>% mutate(snp = paste0(chrom, pos))
+
+shifts.trunc1 = shifts.trunc1 %>% mutate(tpt = case_when(
+    tpt == 'T.1' ~ '0',
+    tpt == 'T.2' ~  '6',
+    tpt == 'T.3' ~  '9',
+    tpt == 'T.4' ~  '12',
+    tpt == 'T.5' ~  '15',
+    tpt == 'T.6' ~  '19',
+    tpt == 'T.7' ~ '21'))
+
+shifts.trunc1 = shifts.trunc1 %>% mutate(tpt = factor(as.character(tpt), levels = c('0', '6', '9','12',
+                                                                                 '15','19','21')))
+
+shifts.trunc1$dynamic = as.factor(shifts.trunc1$dynamic)
+matched.ratios = shifts.trunc1 %>% filter(tpt == '21') %>% group_by(dynamic) %>% count() %>% mutate(freq = n/nrow(shifts.trunc1 %>% filter(tpt == '21')))
+
+```
+
+```{r}
+##Print out ratio of fluctuating v. parallel SNPs across expansion and truncation
+shifts.trunc1 %>% filter(tpt == '21') %>% group_by(dynamic) %>% count() %>% mutate(freq = n/nrow(shifts.trunc1 %>% filter(tpt == '21')))
+
+```
+
+# Figure 3C: Plot trajectories of expansion-favored alleles during truncation
+
+
+```{r}
+snps.sub = sample(unique(shifts.trunc1$snp), 35000) 
+d = (shifts.trunc1) %>% filter(snp %in% snps.sub)
+p  = ggplot(d, aes(x = tpt, y = frequency, group = snp, colour = dynamic)) +
+        geom_line(size = 0.3, alpha = 0.2) +
+        theme_bw(base_size = 25) +
+        theme(legend.position = 'none') +
+        scale_colour_manual(values = c('orange', 'grey', 'purple')) +
+        xlab('Truncation Hour') +
+        ylab('Expansion-Favored Allele Freq.') 
+p
+```
+
+# Plotting ratio of fluctuating:parallel snps
+
+
+```{r}
+##Load in the expansion-identified snps and their matched control sites
+df.Exp = read.csv('./df.sig.Matched.FullExpansion.x2.csv')
+df.Exp = df.Exp %>% mutate(sign.shift = sign(afShift))
+
+```
+
+```{r}
+#get the truncation tpt 0->21 allele frequency shifts for the expansion identified target and matched control sites
+load('./indoor_cages_filteredx2.Truncation1.RData')
+shifts.trunc = get_af_shifts(afmat = afmat, samps = samps, cage_set = NULL, comparisons = c('0_21'))
+shifts.trunc = cbind(sites, shifts.trunc)
+shifts.trunc.matched = left_join(df.Exp %>% dplyr::select(chrom, V1) %>% rename(pos = V1), shifts.trunc)
+
+shifts.trunc.matched = shifts.trunc.matched %>% rename(pos.matched = pos, matched.shift = dAF.0_21)
+shifts.trunc.target = left_join(df.Exp %>% dplyr::select(chrom, pos), shifts.trunc)
+shifts.trunc.target = shifts.trunc.target %>% rename(target.shift = dAF.0_21)
+shifts.trunc.target = shifts.trunc.target %>% mutate(target.shift = target.shift * df.Exp$sign.shift )
+
+shifts.trunc = cbind(shifts.trunc.target, shifts.trunc.matched %>% dplyr::select(-chrom))
+shifts.trunc = shifts.trunc %>% gather(target.shift, matched.shift, key = 'type', value = 'shift')
+
+```
+
+```{r}
+shifts.trunc = shifts.trunc %>% mutate(SNPs = if_else(type == 'target.shift', 'Target SNPs', 'Matched Controls'))
+```
+
+```{r}
+matched.quantiles = quantile(abs((shifts.trunc %>% filter(type == 'matched.shift'))$shift), 
+         probs = c(0.5, 0.75, 0.9, 0.95, 0.99))
+```
+
+```{r}
+matched.quantiles = quantile(abs((shifts.trunc %>% filter(type == 'matched.shift'))$shift), 
+         probs = c(0.5, 0.75, 0.9, 0.95, 0.99))
+#quantiles by chromosomal arm
+df.quantiles = data.frame()
+for (chr in c('2L', '2R', '3L', '3R', 'X')){
+    shifts.trunc.chr = shifts.trunc %>% filter(chrom == chr)
+    matched.quantiles = quantile(abs((shifts.trunc.chr %>% filter(type == 'matched.shift'))$shift), 
+         probs = c(0.5, 0.75, 0.9, 0.95, 0.99))
+    for (i in 1:5){
+        shifts.quant = shifts.trunc.chr %>% filter(abs(shift) > matched.quantiles[[i]] )        
+        n.parallel.matched = nrow(shifts.quant %>% filter(type == 'matched.shift' & shift > 0))
+        n.parallel.target =  nrow(shifts.quant %>% filter(type == 'target.shift'& shift > 0))
+        n.fluc.matched = nrow(shifts.quant %>% filter(type == 'matched.shift' & shift < 0))
+        n.fluc.target = nrow(shifts.quant %>% filter(type == 'target.shift' & shift < 0))
+        count.target = nrow(shifts.quant %>% filter(type == 'target.shift'))
+        count.matched = nrow(shifts.quant %>% filter(type == 'matched.shift'))
+        df = as.data.frame(cbind(chr, i,count.target, count.matched, n.parallel.matched, n.parallel.target , n.fluc.matched , n.fluc.target ))
+        df = df %>% mutate(n.parallel.matched = as.numeric(as.character(n.parallel.matched)),
+                          n.parallel.target = as.numeric(as.character(n.parallel.target)),
+                          n.fluc.matched = as.numeric(as.character(n.fluc.matched)),
+                          n.fluc.target = as.numeric(as.character(n.fluc.target)))
+        df.quantiles = rbind(df.quantiles, df)
+        }
+}
+
+
+```
+
+```{r}
+#genome-wide quantiles
+df.quantiles.gen = data.frame()
+matched.quantiles = quantile(abs((shifts.trunc %>% filter(type == 'matched.shift'))$shift), 
+         probs = c(0.5, 0.75, 0.9, 0.95, 0.99))
+chr = 'Genome'
+for (i in 1:5){
+        shifts.quant = shifts.trunc %>% filter(abs(shift) > matched.quantiles[[i]] )        
+        n.parallel.matched = nrow(shifts.quant %>% filter(type == 'matched.shift' & shift > 0))
+        n.parallel.target =  nrow(shifts.quant %>% filter(type == 'target.shift'& shift > 0))
+        n.fluc.matched = nrow(shifts.quant %>% filter(type == 'matched.shift' & shift < 0))
+        n.fluc.target = nrow(shifts.quant %>% filter(type == 'target.shift' & shift < 0))
+        count.target = nrow(shifts.quant %>% filter(type == 'target.shift'))
+        count.matched = nrow(shifts.quant %>% filter(type == 'matched.shift'))
+        df = as.data.frame(cbind(chr, i,count.target, count.matched, n.parallel.matched, n.parallel.target , n.fluc.matched , n.fluc.target ))
+        df = df %>% mutate(n.parallel.matched = as.numeric(as.character(n.parallel.matched)),
+                          n.parallel.target = as.numeric(as.character(n.parallel.target)),
+                          n.fluc.matched = as.numeric(as.character(n.fluc.matched)),
+                          n.fluc.target = as.numeric(as.character(n.fluc.target)))
+        df.quantiles.gen = rbind(df.quantiles.gen, df)
+    }
+
+
+```
+
+# Figure 3D
+
+```{r}
+df.quantiles = rbind(df.quantiles, df.quantiles.gen)
+
+d.new = data.frame()
+for (i in 1:nrow(df.quantiles)){
+    d = df.quantiles[i,]
+    all.dat <- data.frame(
+    'pos' = c(d %>% pull(n.parallel.target) ,d %>% pull(n.parallel.matched) ) ,
+    'neg' = c(n.fluc.target, n.fluc.matched),
+    row.names = c("Taret", "Non-Matched"),
+      stringsAsFactors = FALSE
+    )
+    all.dat
+    colnames(all.dat) <- c("pos", "negative")
+    p.val = chisq.test(all.dat)$p.value
+    d$p.value = p.val
+    d.new = rbind(d.new, d)
+}
+d.new = d.new %>% mutate(FDR = p.adjust(p.value, method = 'BH'))
+d.new = d.new %>% mutate(percentile = case_when(
+                i == '1' ~ 0.5,
+                i == '2' ~ 0.75,
+                i == '3' ~ 0.9,
+                i == '4' ~ 0.95,
+                i == '5' ~ 0.99))
+
+d.new = d.new %>% rowwise() %>% mutate(ratio.matched = n.parallel.matched/n.fluc.matched,
+                                                     ratio.target = n.parallel.target/n.fluc.target
+                                                    )
+d.new = d.new %>% mutate(Dynamic = if_else(ratio.target > ratio.matched, 'Parallel', 'Fluctuating'))
+
+d.new = d.new %>% rowwise() %>% mutate(count.target = as.numeric(as.character(count.target)),
+                                      count.matched = as.numeric(as.character(count.matched)))
+
+df.quantiles.plot = d.new %>%  pivot_longer(cols = c(ratio.matched, ratio.target),
+               names_to = "type",
+               values_to = "ratio") %>%
+  mutate(N.SNPs = ifelse(type == "ratio.matched", count.matched, count.target))
+df.quantiles.plot = df.quantiles.plot %>% mutate(type = if_else(type == 'ratio.matched', 'Matched', 'Target'))
+
+df.quantiles.plot = df.quantiles.plot %>% rowwise %>% mutate(Color = case_when(type == 'Matched' ~ 'black',
+                                                                type == 'Target' & FDR > 0.05 ~ 'dark grey',
+                                                                type == 'Target' & FDR < 0.05 & Dynamic == 'Parallel' ~ 'purple',
+                                                                type == 'Target' & FDR < 0.05 & Dynamic == 'Fluctuating' ~ 'orange' ))
+
+df.quantiles.plot = df.quantiles.plot %>% rename(Count = N.SNPs, SNPs = type)
+df.quantiles.plot = df.quantiles.plot %>% mutate(SNPs = if_else(SNPs == 'Matched', 'Matched Controls', 'Expansion Favored'))
+df.quantiles.plot$chr = factor(df.quantiles.plot$chr, levels = c('Genome', '2L', '2R',
+                                                                             '3L', '3R', 'X'))
+p = ggplot(df.quantiles.plot, aes(x = as.factor(percentile), y = ratio, colour = Color, shape = SNPs)) +
+    geom_point(size = 8) +
+    xlab('Frequency Shift Percentile') +
+    ylab('Parallel:Fluctuating') +
+    scale_colour_identity() +
+    scale_shape_manual(values = c(19, 4))+
+    theme_bw(base_size = 35) +
+    facet_wrap(~chr, nrow = 1) 
+p
+ggsave('./ParallelToFluctuating.Ratio.pdf', p, width = 35, height =10 )
+```
+
+```{r}
+df.quantiles.plot = df.quantiles.plot %>% rename(Count = N.SNPs, SNPs = type)
+df.quantiles.plot = df.quantiles.plot %>% mutate(SNPs = if_else(SNPs == 'Matched', 'Matched Controls', 'Expansion Favored'))
+df.quantiles.plot$chr = factor(df.quantiles.plot$chr, levels = c('Genome', '2L', '2R',
+                                                                             '3L', '3R', 'X'))
+p = ggplot(df.quantiles.plot, aes(x = as.factor(percentile), y = ratio, colour = Color, shape = SNPs)) +
+    geom_point(size = 8) +
+    xlab('Frequency Shift Percentile') +
+    ylab('Parallel:Fluctuating') +
+    scale_colour_identity() +
+    scale_shape_manual(values = c(19, 4))+
+    theme_bw(base_size = 35) +
+    facet_wrap(~chr, nrow = 1) 
+p
+ggsave('./ParallelToFluctuating.Ratio.pdf', p, width = 35, height =10 )
+```
+
+```{r}
+##stats on observed v. expected fluctuations:
+n.pos.matched = (nrow(shifts.trunc %>% filter(type == 'matched.shift') %>% filter(shift > 0)))/nrow(shifts.trunc %>% filter(type == 'matched.shift'))
+n.neg.matched = (nrow(shifts.trunc %>% filter(type == 'matched.shift') %>% filter(shift < 0)))/nrow(shifts.trunc %>% filter(type == 'matched.shift'))
+
+n.pos.target = (nrow(shifts.trunc %>% filter(type == 'target.shift') %>% filter(shift > 0)))/nrow(shifts.trunc %>% filter(type == 'matched.shift'))
+n.neg.target = (nrow(shifts.trunc %>% filter(type == 'target.shift') %>% filter(shift < 0)))/nrow(shifts.trunc %>% filter(type == 'matched.shift'))
+n.pos.target
+n.neg.target
+
+n.pos.matched = (nrow(shifts.trunc %>% filter(type == 'matched.shift') %>% filter(shift > 0)))
+n.neg.matched = (nrow(shifts.trunc %>% filter(type == 'matched.shift') %>% filter(shift < 0)))
+
+n.pos.target = (nrow(shifts.trunc %>% filter(type == 'target.shift') %>% filter(shift > 0)))
+n.neg.target = (nrow(shifts.trunc %>% filter(type == 'target.shift') %>% filter(shift < 0)))
+
+all.dat <- data.frame(
+    'pos' = c(n.pos.target ,n.pos.matched ) ,
+    'neg' = c(n.neg.target, n.neg.matched),
+    row.names = c("Taret", "Non-Matched"),
+  stringsAsFactors = FALSE
+)
+all.dat
+colnames(all.dat) <- c("pos", "negative")
+
+chisq.test(all.dat)$statistic
+chisq.test(all.dat)$p.value
+```
+
+# Manhattan plot of allele frequency shifts of expansion-identified alleles during expansion and truncation
+
+```{r}
+##Figure 3E
+##y - axis is mean allele frequency shift from start to end of expansion
+##x - genomic positition
+##points: truncation and expansion selected alleles
+##color: expansion or truncation selected
+```
+
+```{r}
+#get significant sites during each phase and allele frequency change within and across phases
+df.sig.trunc = read.csv('./df.sig.Truncation1.csv')
+df.sig.exp = read.csv('./df.sig.FullExpansion.x2.csv')
+
+load('./indoor_cages_filteredx2.FullExpansion.RData')
+shifts.exp = get_af_shifts(afmat = afmat,samps = samps, comparisons = c('0_9'))
+
+load('./indoor_cages_filteredx2.Truncation1.RData')
+shifts.trunc = get_af_shifts(afmat = afmat,samps = samps,  comparisons = c('0_21'))
+
+shifts.exp = cbind(sites, shifts.exp)
+shifts.trunc = cbind(sites, shifts.trunc)
+
+thresh.shift.exp = quantile(abs(shifts.exp$dAF.0_9), probs = c(0.95))[[1]][1]
+thresh.shift.trunc = quantile(abs(shifts.trunc$dAF.0_21), probs = c(0.95))[[1]][1]
+
+#get top 1% nominal p-value GLM
+load('./glm.FullExpansionx2.RData')
+thresh.p.exp = quantile(df.glm$p.0_9, probs = c(0.01))[[1]][1]
+
+load('./glm.Truncation1x2.RData')
+thresh.p.trunc = quantile(df.glm$p.0_21, probs = c(0.01))[[1]][1]
+
+df.sig.trunc = df.sig.trunc %>% mutate(sign.shift.trunc = sign(afShift))
+df.sig.trunc = left_join(df.sig.trunc %>% dplyr::select(chrom, pos,p.div, FDR,afShift, sign.shift.trunc), shifts.exp )
+df.sig.trunc = df.sig.trunc %>% mutate(expansion.shift = dAF.0_9 * sign.shift.trunc)
+df.sig.trunc = df.sig.trunc %>% mutate(truncation.shift = afShift * sign.shift.trunc)
+df.sig.trunc$IdentificationPhase = 'Truncation'
+v.sig.trunc  = df.sig.trunc %>% filter(p.div <= thresh.p.trunc & abs(afShift) >= thresh.shift.trunc)
+
+df.sig.exp = df.sig.exp %>% mutate(sign.shift.exp= sign(afShift))
+df.sig.exp = left_join(df.sig.exp %>% dplyr::select(chrom, pos,p.div, FDR,afShift, sign.shift.exp), shifts.trunc )
+df.sig.exp = df.sig.exp %>% mutate(expansion.shift = afShift * sign.shift.exp)
+df.sig.exp = df.sig.exp %>% mutate(truncation.shift = dAF.0_21 * sign.shift.exp)
+df.sig.exp$IdentificationPhase = 'Expansion'
+v.sig.exp = df.sig.exp %>% filter(p.div <= thresh.p.exp & abs(afShift) >= thresh.shift.exp)
+```
+
+```{r}
+#plot expansion shift of glm-significant snps for truncation (orange) and expansion (purple)
+df.plot = bind_rows(df.sig.trunc %>% dplyr::select(-sign.shift.trunc),
+                        df.sig.exp %>% dplyr::select(-sign.shift.exp) ) 
+
+df.plot %>% group_by(IdentificationPhase) %>% summarise(med.0_9 = median(dAF.0_9),
+                                                       med.0_21 = median(dAF.0_21),
+                                                       mean.0_9 = mean(dAF.0_9),
+                                                       mean.0_21 = mean(dAF.0_21))
+
+p = ggplot(df.plot, aes(x = pos/1000000)) +
+  theme_minimal() +
+  lims(y = c(-.2, .2)) +
+  facet_grid(~ chrom, scales = "free_x") +
+  theme(strip.text = element_text(size = 40),
+        strip.text.y = element_text(size = 40),
+        axis.text.y = element_text(size = 40),
+        axis.text.x = element_text(size = 40),
+        axis.title = element_text(size = 40),
+       legend.text=element_text(size=40),
+       legend.title=element_text(size=40)) +
+  labs(x = "Position (Mb)", y = "Expansion Allele Frequency Shift") +
+
+  # Draw the "purple" group first (whichever category that is)
+  geom_point(
+    data = subset(df.plot, IdentificationPhase == "Expansion"), # change if needed
+    aes(y = expansion.shift, colour = IdentificationPhase),
+    alpha = 0.4, size = 1
+  ) +
+  # Draw the "orange" group second, with stronger alpha
+  geom_point(
+    data = subset(df.plot, IdentificationPhase == "Truncation"), # change if needed
+    aes(y = expansion.shift, colour = IdentificationPhase),
+    alpha = 0.4, size = 1
+  ) +
+  scale_colour_manual(values = c("Expansion" = "purple", "Truncation" = "orange")) 
+p
+ggsave('./layered.manhattan.ExpansionShifts.png', p, height = 10, width = 45 )
+```
+
+```{r}
+
+```
